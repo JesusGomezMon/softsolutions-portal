@@ -1,22 +1,28 @@
-import { db } from "@/lib/db";
+import { many, one, run } from "@/lib/db";
 import type { Client } from "./types";
 
-// node:sqlite devuelve filas con prototipo null; las volvemos objetos planos
-// con spread para que sean serializables a través del límite servidor→cliente
-// (props a Client Components o argumentos ligados de Server Actions).
-export function listClients(): Client[] {
-  const rows = db.prepare("SELECT * FROM clients ORDER BY name ASC").all() as unknown as Client[];
-  return rows.map((r) => ({ ...r }));
+function plain<T extends object>(row: T): T {
+  return { ...row };
 }
 
-export function getClient(id: number): Client | undefined {
-  const row = db.prepare("SELECT * FROM clients WHERE id = ?").get(id) as unknown as Client | undefined;
-  return row ? { ...row } : undefined;
+export async function listClients(): Promise<Client[]> {
+  const rows = await many<Client>("SELECT * FROM clients ORDER BY name ASC");
+  return rows.map(plain);
 }
 
-export function createClient(input: { name: string; company: string; contact_email: string }): number {
-  const result = db
-    .prepare("INSERT INTO clients (name, company, contact_email) VALUES (?, ?, ?)")
-    .run(input.name, input.company, input.contact_email);
+export async function getClient(id: number): Promise<Client | undefined> {
+  const row = await one<Client>("SELECT * FROM clients WHERE id = ?", [id]);
+  return row ? plain(row) : undefined;
+}
+
+export async function createClient(input: {
+  name: string;
+  company: string;
+  contact_email: string;
+}): Promise<number> {
+  const result = await run(
+    "INSERT INTO clients (name, company, contact_email) VALUES (?, ?, ?)",
+    [input.name, input.company, input.contact_email]
+  );
   return Number(result.lastInsertRowid);
 }

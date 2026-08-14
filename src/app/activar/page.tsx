@@ -16,13 +16,13 @@ export default async function ActivarPage({
 }) {
   const sp = await searchParams;
   const token = sp.token ?? "";
-  const user = token ? getUserByInviteToken(token) : undefined;
+  const user = token ? await getUserByInviteToken(token) : undefined;
   const valid = user && inviteIsValid(user.invite_expires_at);
 
   async function activate(formData: FormData) {
     "use server";
     const formToken = String(formData.get("token") ?? "");
-    const u = formToken ? getUserByInviteToken(formToken) : undefined;
+    const u = formToken ? await getUserByInviteToken(formToken) : undefined;
     // Re-validar del lado servidor: token vigente, contraseña OK.
     if (!u || !inviteIsValid(u.invite_expires_at)) {
       redirect("/activar?error=token");
@@ -36,7 +36,7 @@ export default async function ActivarPage({
     }
 
     const bcrypt = await import("bcryptjs");
-    activateUser(u!.id, bcrypt.hashSync(password, 10), name);
+    await activateUser(u!.id, bcrypt.hashSync(password, 10), name);
 
     // Inicia sesión con la contraseña recién definida → al portal del cliente.
     try {
@@ -47,7 +47,7 @@ export default async function ActivarPage({
     }
   }
 
-  const clientName = user?.client_id ? getClient(user.client_id)?.name ?? "" : "";
+  const clientName = user?.client_id ? (await getClient(user.client_id))?.name ?? "" : "";
 
   return (
     <main className="flex min-h-full flex-1 items-center justify-center bg-brand-night px-4 py-12">

@@ -1,55 +1,58 @@
-import { DatabaseSync } from "node:sqlite";
+import { createClient, type Client, type InValue } from "@libsql/client";
 import fs from "node:fs";
 import path from "node:path";
 
-// Persisted with Node's built-in `node:sqlite` module rather than Prisma.
-// Reason: Prisma downloads its schema/query engine binaries from an external
-// CDN at install time, which is unreachable from this sandboxed environment.
-// node:sqlite ships with Node 22+ and needs no external download. See
-// docs/02-project-plan.md for the full note.
+// LibSQL (Turso) instead of node:sqlite — Vercel has no persistent disk, so the
+// DB must live remotely. Locally we fall back to a file URL under ./data.
 
-// During `next build`, page-data workers all import this module. Point each
-// worker at its own temp DB so they don't fight over a shared file (ERR
-// "database is locked"). Runtime uses DATA_DIR (Railway volume /data) or ./data.
-const isBuildTime =
-  process.env.NEXT_PHASE === "phase-production-build" ||
-  process.env.npm_lifecycle_event === "build";
+type SqlArgs = InValue[] | Record<string, InValue>;
 
-const DATA_DIR = isBuildTime
-  ? path.join(process.cwd(), ".next", "cache", `sqlite-build-${process.pid}`)
-  : process.env.DATA_DIR || path.join(process.cwd(), "data");
-const DB_PATH = path.join(DATA_DIR, "app.db");
+let client: Client | null = null;
+let schemaReady: Promise<void> | null = null;
 
-declare global {
-  // eslint-disable-next-line no-var
-  var __softsolutionsDb: DatabaseSync | undefined;
-}
-
-function createConnection(): DatabaseSync {
-  // DATA_DIR may be an absolute volume path in prod (/data on Railway).
-  if (!fs.existsSync(/* turbopackIgnore: true */ DATA_DIR)) {
-    fs.mkdirSync(/* turbopackIgnore: true */ DATA_DIR, { recursive: true });
+function databaseUrl(): string {
+  if (process.env.DATABASE_URL) return process.env.DATABASE_URL;
+  const dir = path.join(process.cwd(), "data");
+  if (!fs.existsSync(/* turbopackIgnore: true */ dir)) {
+    fs.mkdirSync(/* turbopackIgnore: true */ dir, { recursive: true });
   }
-  const database = new DatabaseSync(DB_PATH);
-  database.exec("PRAGMA foreign_keys = ON;");
-  database.exec("PRAGMA busy_timeout = 5000;");
-  return database;
+  // file: URL with forward slashes works on Windows too
+  const file = path.join(dir, "app.db").replace(/\\/g, "/");
+  return `file:${file}`;
 }
 
-// Reuse a single connection across hot reloads in dev.
-export const db = globalThis.__softsolutionsDb ?? createConnection();
-if (process.env.NODE_ENV !== "production") {
-  globalThis.__softsolutionsDb = db;
+export function getDb(): Client {
+  if (!client) {
+    client = createClient({
+      url: databaseUrl(),
+      authToken: process.env.DATABASE_AUTH_TOKEN,
+    });
+  }
+  return client;
 }
 
-let initialized = false;
+export async function one<T>(sql: string, args: SqlArgs = []): Promise<T | undefined> {
+  const rs = await getDb().execute({ sql, args });
+  return (rs.rows[0] as T | undefined) ?? undefined;
+}
 
-/** Creates all tables if they don't exist yet. Safe to call multiple times. */
-export function ensureSchema() {
-  if (initialized) return;
-  initialized = true;
+export async function many<T>(sql: string, args: SqlArgs = []): Promise<T[]> {
+  const rs = await getDb().execute({ sql, args });
+  return rs.rows as unknown as T[];
+}
 
-  db.exec(`
+export async function run(sql: string, args: SqlArgs = []) {
+  return getDb().execute({ sql, args });
+}
+
+export async function ensureSchema() {
+  if (!schemaReady) schemaReady = migrate();
+  await schemaReady;
+}
+
+async function migrate() {
+  const db = getDb();
+  await db.executeMultiple(`
     CREATE TABLE IF NOT EXISTS clients (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       name TEXT NOT NULL,
@@ -123,73 +126,28 @@ export function ensureSchema() {
     CREATE INDEX IF NOT EXISTS idx_users_client ON users(client_id);
   `);
 
-  // Lightweight migration guard: if a local data/app.db was created before the
-  // catalog-driven quotations redesign, its `quotations` table won't have the
-  // new columns. CREATE TABLE IF NOT EXISTS silently no-ops on an existing
-  // table, so detect the old shape here and rebuild just that table. This is
-  // demo data (gitignored), so dropping it is safe — there's no production
-  // data behind this check.
-  const columns = db.prepare("PRAGMA table_info(quotations)").all() as { name: string }[];
-  const hasNewSchema = columns.some((c) => c.name === "service_type");
-  if (!hasNewSchema) {
-    db.exec("DROP TABLE IF EXISTS quotations;");
-    db.exec(`
-      CREATE TABLE quotations (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        client_id INTEGER NOT NULL REFERENCES clients(id) ON DELETE CASCADE,
-        project_id INTEGER REFERENCES projects(id) ON DELETE SET NULL,
-        service_type TEXT NOT NULL CHECK (service_type IN ('LANDING_PAGE', 'SITIO_CORPORATIVO', 'TIENDA_LINEA', 'PERSONALIZADO')),
-        service_tier TEXT CHECK (service_tier IN ('ESENCIAL', 'PROFESIONAL', 'PREMIUM')),
-        title TEXT NOT NULL,
-        objective TEXT NOT NULL DEFAULT '',
-        scope_items TEXT NOT NULL DEFAULT '[]',
-        included_items TEXT NOT NULL DEFAULT '[]',
-        courtesy_items TEXT NOT NULL DEFAULT '[]',
-        proyecto_amount INTEGER NOT NULL DEFAULT 0,
-        proyecto_discount INTEGER NOT NULL DEFAULT 0,
-        proyecto_discount_label TEXT,
-        payment_terms TEXT NOT NULL DEFAULT '50% de anticipo y 50% contra entrega.',
-        estimated_time TEXT NOT NULL DEFAULT '',
-        suscripcion_setup_fee INTEGER NOT NULL DEFAULT 0,
-        suscripcion_monthly_base INTEGER NOT NULL DEFAULT 0,
-        validity_days INTEGER NOT NULL DEFAULT 30,
-        status TEXT NOT NULL CHECK (status IN ('BORRADOR', 'ENVIADA', 'ACEPTADA', 'PAGADA')) DEFAULT 'BORRADOR',
-        accepted_modality TEXT CHECK (accepted_modality IN ('PROYECTO', 'SUSCRIPCION')),
-        created_at TEXT NOT NULL DEFAULT (datetime('now'))
-      );
-      CREATE INDEX IF NOT EXISTS idx_quotations_client ON quotations(client_id);
-    `);
+  // Additive migrations for DBs created before newer columns existed.
+  const cols = await many<{ name: string }>("PRAGMA table_info(quotations)");
+  const colNames = new Set(cols.map((c) => c.name));
+  if (!colNames.has("accepted_plan")) {
+    await run("ALTER TABLE quotations ADD COLUMN accepted_plan TEXT");
+  }
+  if (!colNames.has("stripe_session_id")) {
+    await run("ALTER TABLE quotations ADD COLUMN stripe_session_id TEXT");
+  }
+  if (!colNames.has("paid_at")) {
+    await run("ALTER TABLE quotations ADD COLUMN paid_at TEXT");
   }
 
-  // Additive migration: `accepted_plan` records which subscription plan the
-  // client accepted (permanencia). Older local DBs already have the rest of the
-  // new schema but not this column, so add it in place — existing rows get NULL.
-  const cols = db.prepare("PRAGMA table_info(quotations)").all() as { name: string }[];
-  if (!cols.some((c) => c.name === "accepted_plan")) {
-    db.exec("ALTER TABLE quotations ADD COLUMN accepted_plan TEXT");
+  const userCols = await many<{ name: string }>("PRAGMA table_info(users)");
+  const userNames = new Set(userCols.map((c) => c.name));
+  if (!userNames.has("must_change_password")) {
+    await run("ALTER TABLE users ADD COLUMN must_change_password INTEGER NOT NULL DEFAULT 0");
   }
-
-  // Additive migration: `must_change_password` forces a client to set their own
-  // password on first login (temp password issued by an admin). Older DBs lack it.
-  const userCols = db.prepare("PRAGMA table_info(users)").all() as { name: string }[];
-  if (!userCols.some((c) => c.name === "must_change_password")) {
-    db.exec("ALTER TABLE users ADD COLUMN must_change_password INTEGER NOT NULL DEFAULT 0");
+  if (!userNames.has("invite_token")) {
+    await run("ALTER TABLE users ADD COLUMN invite_token TEXT");
   }
-  // Additive migration: email-invitation onboarding (token + expiry).
-  if (!userCols.some((c) => c.name === "invite_token")) {
-    db.exec("ALTER TABLE users ADD COLUMN invite_token TEXT");
-  }
-  if (!userCols.some((c) => c.name === "invite_expires_at")) {
-    db.exec("ALTER TABLE users ADD COLUMN invite_expires_at TEXT");
-  }
-
-  // Additive migration: Stripe payment tracking on quotations.
-  if (!cols.some((c) => c.name === "stripe_session_id")) {
-    db.exec("ALTER TABLE quotations ADD COLUMN stripe_session_id TEXT");
-  }
-  if (!cols.some((c) => c.name === "paid_at")) {
-    db.exec("ALTER TABLE quotations ADD COLUMN paid_at TEXT");
+  if (!userNames.has("invite_expires_at")) {
+    await run("ALTER TABLE users ADD COLUMN invite_expires_at TEXT");
   }
 }
-
-ensureSchema();

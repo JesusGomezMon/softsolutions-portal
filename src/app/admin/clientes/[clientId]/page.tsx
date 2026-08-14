@@ -65,7 +65,7 @@ export default async function ClientDetailPage({
   const { clientId } = await params;
   const sp = await searchParams;
   const id = Number(clientId);
-  const client = getClient(id);
+  const client = await getClient(id);
   if (!client) notFound();
 
   const path = `/admin/clientes/${id}`;
@@ -81,7 +81,7 @@ export default async function ClientDetailPage({
     if (!email) return;
 
     // Guard: el correo es único; no invitar a alguien ya registrado.
-    if (getUserByEmail(email)) {
+    if (await getUserByEmail(email)) {
       redirect(`${path}?accesoError=${encodeURIComponent(email)}`);
     }
 
@@ -90,7 +90,7 @@ export default async function ClientDetailPage({
     // Contraseña placeholder no adivinable: nadie entra hasta activar por el link.
     const placeholderHash = bcrypt.hashSync(crypto.randomBytes(24).toString("hex"), 10);
 
-    createUser({
+    await createUser({
       email,
       password_hash: placeholderHash,
       name: name || email,
@@ -116,7 +116,7 @@ export default async function ClientDetailPage({
     const modality = String(formData.get("modality") ?? "PROYECTO") as Modality;
     const tier = String(formData.get("tier") ?? "").trim();
     if (!name || !tier) return;
-    createProject({ client_id: id, name, modality, tier });
+    await createProject({ client_id: id, name, modality, tier });
     revalidatePath(path);
   }
 
@@ -125,7 +125,7 @@ export default async function ClientDetailPage({
     const projectId = Number(formData.get("project_id"));
     const title = String(formData.get("title") ?? "").trim();
     if (!projectId || !title) return;
-    createMilestone({ project_id: projectId, title });
+    await createMilestone({ project_id: projectId, title });
     revalidatePath(path);
   }
 
@@ -135,7 +135,7 @@ export default async function ClientDetailPage({
     const current = String(formData.get("current") ?? "") as MilestoneStatus;
     const next = NEXT_MILESTONE_STATUS[current];
     if (!next) return;
-    updateMilestoneStatus(milestoneId, next);
+    await updateMilestoneStatus(milestoneId, next);
     revalidatePath(path);
   }
 
@@ -148,7 +148,7 @@ export default async function ClientDetailPage({
     const title = String(formData.get("title") ?? "").trim();
     if (!serviceType || !title) return;
 
-    const newId = createQuotation({
+    const newId = await createQuotation({
       client_id: id,
       project_id: projectId,
       service_type: serviceType,
@@ -175,13 +175,19 @@ export default async function ClientDetailPage({
     "use server";
     const quotationId = Number(formData.get("quotation_id"));
     if (!quotationId) return;
-    deleteQuotation(quotationId);
+    await deleteQuotation(quotationId);
     revalidatePath(path);
   }
 
-  const projects = listProjectsByClient(id);
-  const quotations = listQuotationsByClient(id);
-  const clientUsers = listUsersByClient(id);
+  const projects = await listProjectsByClient(id);
+  const quotations = await listQuotationsByClient(id);
+  const clientUsers = await listUsersByClient(id);
+  const projectsWithMilestones = await Promise.all(
+    projects.map(async (p) => ({
+      project: p,
+      milestones: await listMilestonesByProject(p.id),
+    }))
+  );
   const invitedEmail = sp.invitado ? decodeURIComponent(sp.invitado) : null;
   const emailReady = isEmailConfigured();
   // Base del portal de cliente para reconstruir el link de activación de cada
@@ -316,12 +322,11 @@ export default async function ClientDetailPage({
       <section className="space-y-4">
         <h2 className="font-display text-xl text-brand-navy">Proyectos</h2>
 
-        {projects.length === 0 ? (
+        {projectsWithMilestones.length === 0 ? (
           <EmptyState title="Sin proyectos todavía" body="Crea el primer proyecto de este cliente abajo." />
         ) : (
           <div className="space-y-4">
-            {projects.map((p) => {
-              const milestones = listMilestonesByProject(p.id);
+            {projectsWithMilestones.map(({ project: p, milestones }) => {
               const progress = projectProgress(milestones);
               return (
                 <Card key={p.id}>

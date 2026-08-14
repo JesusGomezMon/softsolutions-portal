@@ -25,7 +25,7 @@ export default async function CambiarPasswordPage({
     }
 
     const bcrypt = await import("bcryptjs");
-    setPassword(userId, bcrypt.hashSync(password, 10));
+    await setPassword(userId, bcrypt.hashSync(password, 10));
 
     // Re-authenticate so the session's mustChangePassword claim refreshes
     // (JWT sessions don't re-read the DB on every request).

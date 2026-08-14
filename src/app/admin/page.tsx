@@ -10,13 +10,13 @@ async function createClientAction(formData: FormData) {
   const company = String(formData.get("company") ?? "").trim();
   const contact_email = String(formData.get("contact_email") ?? "").trim();
   if (!name || !company || !contact_email) return;
-  createClient({ name, company, contact_email });
+  await createClient({ name, company, contact_email });
   revalidatePath("/admin");
 }
 
 export default async function AdminHomePage() {
-  const clients = listClients();
-  const projects = listAllProjectsWithClientName();
+  const clients = await listClients();
+  const projects = await listAllProjectsWithClientName();
   const projectCountByClient = new Map<number, number>();
   for (const p of projects) {
     projectCountByClient.set(p.client_id, (projectCountByClient.get(p.client_id) ?? 0) + 1);

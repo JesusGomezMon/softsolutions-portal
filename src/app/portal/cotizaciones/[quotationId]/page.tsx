@@ -26,11 +26,11 @@ export default async function PortalQuotationDetailPage({
   const session = await auth();
   const clientId = session?.user?.clientId;
 
-  const quotation = getQuotation(Number(quotationId));
+  const quotation = await getQuotation(Number(quotationId));
   // Ownership check: a client can only ever open their own quotation.
   if (!clientId || !quotation || quotation.client_id !== clientId) notFound();
 
-  const client = getClient(clientId);
+  const client = await getClient(clientId);
 
   async function acceptQuotation(formData: FormData) {
     "use server";
@@ -38,7 +38,7 @@ export default async function PortalQuotationDetailPage({
     // quotation, and only while it's ENVIADA (no re-accepting, no touching PAGADA).
     const s = await auth();
     const cid = s?.user?.clientId;
-    const q = getQuotation(Number(quotationId));
+    const q = await getQuotation(Number(quotationId));
     if (!cid || !q || q.client_id !== cid || q.status !== "ENVIADA") return;
 
     const modality = String(formData.get("modality"));
@@ -52,7 +52,7 @@ export default async function PortalQuotationDetailPage({
       plan = planRaw as SubscriptionPlanId;
     }
 
-    updateQuotationStatus(q.id, "ACEPTADA", modality, plan);
+    await updateQuotationStatus(q.id, "ACEPTADA", modality, plan);
     revalidatePath(`/portal/cotizaciones/${quotationId}`);
     revalidatePath("/portal");
   }
@@ -63,7 +63,7 @@ export default async function PortalQuotationDetailPage({
     // (not yet paid) quotation.
     const s = await auth();
     const cid = s?.user?.clientId;
-    const q = getQuotation(Number(quotationId));
+    const q = await getQuotation(Number(quotationId));
     if (!cid || !q || q.client_id !== cid || q.status !== "ACEPTADA") return;
 
     const breakdown = paymentBreakdown(q);

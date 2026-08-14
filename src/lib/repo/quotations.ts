@@ -1,4 +1,4 @@
-import { db } from "@/lib/db";
+import { many, one, run } from "@/lib/db";
 import type { Quotation, QuotationRow, QuotationStatus } from "./types";
 import type { ServiceTier, ServiceType, SubscriptionPlanId } from "@/lib/catalog";
 
@@ -11,28 +11,25 @@ function parseRow(row: QuotationRow): Quotation {
   };
 }
 
-export function listQuotationsByClient(clientId: number): Quotation[] {
-  const rows = db
-    .prepare("SELECT * FROM quotations WHERE client_id = ? ORDER BY created_at DESC")
-    .all(clientId) as unknown as QuotationRow[];
+export async function listQuotationsByClient(clientId: number): Promise<Quotation[]> {
+  const rows = await many<QuotationRow>(
+    "SELECT * FROM quotations WHERE client_id = ? ORDER BY created_at DESC",
+    [clientId]
+  );
   return rows.map(parseRow);
 }
 
-export function listAllQuotationsWithClientName(): (Quotation & { client_name: string })[] {
-  const rows = db
-    .prepare(
-      `SELECT q.*, c.name AS client_name
-       FROM quotations q JOIN clients c ON c.id = q.client_id
-       ORDER BY q.created_at DESC`
-    )
-    .all() as unknown as (QuotationRow & { client_name: string })[];
+export async function listAllQuotationsWithClientName(): Promise<(Quotation & { client_name: string })[]> {
+  const rows = await many<QuotationRow & { client_name: string }>(
+    `SELECT q.*, c.name AS client_name
+     FROM quotations q JOIN clients c ON c.id = q.client_id
+     ORDER BY q.created_at DESC`
+  );
   return rows.map((r) => ({ ...parseRow(r), client_name: r.client_name }));
 }
 
-export function getQuotation(id: number): Quotation | undefined {
-  const row = db.prepare("SELECT * FROM quotations WHERE id = ?").get(id) as unknown as
-    | QuotationRow
-    | undefined;
+export async function getQuotation(id: number): Promise<Quotation | undefined> {
+  const row = await one<QuotationRow>("SELECT * FROM quotations WHERE id = ?", [id]);
   return row ? parseRow(row) : undefined;
 }
 
@@ -56,18 +53,16 @@ export interface CreateQuotationInput {
   validity_days: number;
 }
 
-export function createQuotation(input: CreateQuotationInput): number {
-  const result = db
-    .prepare(
-      `INSERT INTO quotations (
-        client_id, project_id, service_type, service_tier, title, objective,
-        scope_items, included_items, courtesy_items,
-        proyecto_amount, proyecto_discount, proyecto_discount_label,
-        payment_terms, estimated_time,
-        suscripcion_setup_fee, suscripcion_monthly_base, validity_days
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
-    )
-    .run(
+export async function createQuotation(input: CreateQuotationInput): Promise<number> {
+  const result = await run(
+    `INSERT INTO quotations (
+      client_id, project_id, service_type, service_tier, title, objective,
+      scope_items, included_items, courtesy_items,
+      proyecto_amount, proyecto_discount, proyecto_discount_label,
+      payment_terms, estimated_time,
+      suscripcion_setup_fee, suscripcion_monthly_base, validity_days
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    [
       input.client_id,
       input.project_id ?? null,
       input.service_type,
@@ -84,35 +79,37 @@ export function createQuotation(input: CreateQuotationInput): number {
       input.estimated_time,
       input.suscripcion_setup_fee,
       input.suscripcion_monthly_base,
-      input.validity_days
-    );
+      input.validity_days,
+    ]
+  );
   return Number(result.lastInsertRowid);
 }
 
-export function deleteQuotation(id: number): void {
-  db.prepare("DELETE FROM quotations WHERE id = ?").run(id);
+export async function deleteQuotation(id: number): Promise<void> {
+  await run("DELETE FROM quotations WHERE id = ?", [id]);
 }
 
 /** Marks a quotation as paid from a confirmed Stripe checkout. Idempotent. */
-export function markQuotationPaid(id: number, stripeSessionId: string): void {
-  db.prepare(
-    "UPDATE quotations SET status = 'PAGADA', stripe_session_id = ?, paid_at = datetime('now') WHERE id = ?"
-  ).run(stripeSessionId, id);
+export async function markQuotationPaid(id: number, stripeSessionId: string): Promise<void> {
+  await run(
+    "UPDATE quotations SET status = 'PAGADA', stripe_session_id = ?, paid_at = datetime('now') WHERE id = ?",
+    [stripeSessionId, id]
+  );
 }
 
-export function updateQuotationStatus(
+export async function updateQuotationStatus(
   id: number,
   status: QuotationStatus,
   acceptedModality?: "PROYECTO" | "SUSCRIPCION" | null,
   acceptedPlan?: SubscriptionPlanId | null
-): void {
+): Promise<void> {
   if (acceptedModality !== undefined) {
-    // Only a subscription carries a plan; a project acceptance clears it.
     const plan = acceptedModality === "SUSCRIPCION" ? acceptedPlan ?? null : null;
-    db.prepare(
-      "UPDATE quotations SET status = ?, accepted_modality = ?, accepted_plan = ? WHERE id = ?"
-    ).run(status, acceptedModality, plan, id);
+    await run(
+      "UPDATE quotations SET status = ?, accepted_modality = ?, accepted_plan = ? WHERE id = ?",
+      [status, acceptedModality, plan, id]
+    );
   } else {
-    db.prepare("UPDATE quotations SET status = ? WHERE id = ?").run(status, id);
+    await run("UPDATE quotations SET status = ? WHERE id = ?", [status, id]);
   }
 }

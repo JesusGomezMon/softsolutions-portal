@@ -20,9 +20,15 @@ export default async function PortalPage() {
     );
   }
 
-  const client = getClient(clientId);
-  const projects = listProjectsByClient(clientId);
-  const quotations = listQuotationsByClient(clientId);
+  const client = await getClient(clientId);
+  const projects = await listProjectsByClient(clientId);
+  const quotations = await listQuotationsByClient(clientId);
+  const projectsWithMilestones = await Promise.all(
+    projects.map(async (p) => ({
+      project: p,
+      milestones: await listMilestonesByProject(p.id),
+    }))
+  );
 
   return (
     <div className="space-y-8">
@@ -36,12 +42,11 @@ export default async function PortalPage() {
 
       <section className="space-y-4">
         <h2 className="font-display text-xl text-brand-navy">Mis proyectos</h2>
-        {projects.length === 0 ? (
+        {projectsWithMilestones.length === 0 ? (
           <EmptyState title="Aún no tienes proyectos activos" body="Cuando SoftSolutions dé de alta un proyecto, aparecerá aquí." />
         ) : (
           <div className="space-y-4">
-            {projects.map((p) => {
-              const milestones = listMilestonesByProject(p.id);
+            {projectsWithMilestones.map(({ project: p, milestones }) => {
               const progress = projectProgress(milestones);
               return (
                 <Card key={p.id}>

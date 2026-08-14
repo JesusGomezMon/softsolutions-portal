@@ -16,12 +16,12 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
         password: { label: "Contraseña", type: "password" },
       },
       authorize: async (credentials) => {
-        ensureSeeded();
+        await ensureSeeded();
         const email = credentials?.email as string | undefined;
         const password = credentials?.password as string | undefined;
         if (!email || !password) return null;
 
-        const user = getUserByEmail(email);
+        const user = await getUserByEmail(email);
         if (!user) return null;
 
         const valid = bcrypt.compareSync(password, user.password_hash);

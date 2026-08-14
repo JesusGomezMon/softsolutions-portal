@@ -32,7 +32,7 @@ export async function POST(req: Request) {
     const session = event.data.object as Stripe.Checkout.Session;
     const quotationId = Number(session.metadata?.quotationId);
     if (quotationId && session.payment_status === "paid") {
-      markQuotationPaid(quotationId, session.id);
+      await markQuotationPaid(quotationId, session.id);
     }
   }
 

@@ -14,15 +14,15 @@ export default async function AdminQuotationDetailPage({
   params: Promise<{ clientId: string; quotationId: string }>;
 }) {
   const { clientId, quotationId } = await params;
-  const client = getClient(Number(clientId));
-  const quotation = getQuotation(Number(quotationId));
+  const client = await getClient(Number(clientId));
+  const quotation = await getQuotation(Number(quotationId));
   if (!client || !quotation || quotation.client_id !== client.id) notFound();
 
   const path = `/admin/clientes/${clientId}/cotizaciones/${quotationId}`;
 
   async function markSent() {
     "use server";
-    updateQuotationStatus(quotation!.id, "ENVIADA");
+    await updateQuotationStatus(quotation!.id, "ENVIADA");
     revalidatePath(path);
   }
 
@@ -31,20 +31,20 @@ export default async function AdminQuotationDetailPage({
     const modality = String(formData.get("modality")) as "PROYECTO" | "SUSCRIPCION";
     const planRaw = String(formData.get("plan") ?? "");
     const plan = (planRaw || null) as SubscriptionPlanId | null;
-    updateQuotationStatus(quotation!.id, "ACEPTADA", modality, plan);
+    await updateQuotationStatus(quotation!.id, "ACEPTADA", modality, plan);
     revalidatePath(path);
   }
 
   async function markPaid() {
     "use server";
     // Preserve the accepted plan when advancing to PAGADA.
-    updateQuotationStatus(quotation!.id, "PAGADA", quotation!.accepted_modality, quotation!.accepted_plan);
+    await updateQuotationStatus(quotation!.id, "PAGADA", quotation!.accepted_modality, quotation!.accepted_plan);
     revalidatePath(path);
   }
 
   async function deleteAction() {
     "use server";
-    deleteQuotation(quotation!.id);
+    await deleteQuotation(quotation!.id);
     revalidatePath(`/admin/clientes/${clientId}`);
     redirect(`/admin/clientes/${clientId}`);
   }
