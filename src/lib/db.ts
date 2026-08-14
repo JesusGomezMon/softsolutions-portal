@@ -12,6 +12,7 @@ let schemaReady: Promise<void> | null = null;
 
 function databaseUrl(): string {
   if (process.env.DATABASE_URL) return process.env.DATABASE_URL;
+  if (process.env.TURSO_DATABASE_URL) return process.env.TURSO_DATABASE_URL;
   const dir = path.join(process.cwd(), "data");
   if (!fs.existsSync(/* turbopackIgnore: true */ dir)) {
     fs.mkdirSync(/* turbopackIgnore: true */ dir, { recursive: true });
@@ -25,7 +26,7 @@ export function getDb(): Client {
   if (!client) {
     client = createClient({
       url: databaseUrl(),
-      authToken: process.env.DATABASE_AUTH_TOKEN,
+      authToken: process.env.DATABASE_AUTH_TOKEN || process.env.TURSO_AUTH_TOKEN,
     });
   }
   return client;
