@@ -1,0 +1,114 @@
+@import "tailwindcss";
+
+:root {
+  /* Paleta SoftSolutions — "Azul profundo & Acero" (tomada del sitio de marca) */
+  --niebla: #f2f4f5; /* fondo base */
+  --piedra: #e1e6e9; /* fondo secundario / tarjetas */
+  --acero: #a7b2ba; /* bordes, líneas divisorias */
+  --pizarra: #4c5a66; /* texto secundario */
+  --tinta: #161d24; /* texto principal — nunca negro puro */
+  --noche: #0b131a; /* secciones oscuras, encabezados */
+  --cobalto: #2f5d8a; /* acento de marca — uso mesurado */
+  --acero-claro: #7c97ac; /* íconos, micro-detalles */
+  --hielo: #cbd8de; /* badges, separadores suaves */
+
+  /* Mapeo a los tokens que ya usa el portal */
+  --background: var(--niebla);
+  --foreground: var(--tinta);
+  --brand-navy: var(--tinta);
+  --brand-night: var(--noche);
+  --brand-indigo: var(--cobalto);
+  --brand-border: #d4dbe0;
+  --brand-muted: var(--pizarra);
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-brand-navy: var(--brand-navy);
+  --color-brand-night: var(--brand-night);
+  --color-brand-indigo: var(--brand-indigo);
+  --color-brand-border: var(--brand-border);
+  --color-brand-muted: var(--brand-muted);
+  --color-brand-steel: var(--acero-claro);
+  --color-brand-ice: var(--hielo);
+
+  --font-sans: var(--font-inter);
+  --font-serif: var(--font-fraunces);
+
+  /* Esquinas nítidas (radio 2px) en toda la interfaz, como el sitio de marca. */
+  --radius-xs: 2px;
+  --radius-sm: 2px;
+  --radius-md: 2px;
+  --radius-lg: 2px;
+  --radius-xl: 2px;
+  --radius-2xl: 3px;
+  --radius-3xl: 3px;
+  --radius-full: 2px;
+}
+
+body {
+  background: var(--background);
+  color: var(--foreground);
+  font-family: var(--font-inter), -apple-system, BlinkMacSystemFont, "Segoe UI", Arial, sans-serif;
+  line-height: 1.6;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* Fraunces para títulos display; Inter para el resto de la UI. */
+.font-display {
+  font-family: var(--font-fraunces), Georgia, "Times New Roman", serif;
+  font-weight: 400;
+  letter-spacing: -0.01em;
+}
+
+.font-display em,
+em.brand-em {
+  font-style: italic;
+  color: var(--cobalto);
+  font-weight: 400;
+}
+
+/* Etiqueta "eyebrow" de la marca: versalitas con tracking y guion de acento. */
+.eyebrow {
+  display: inline-flex;
+  align-items: center;
+  gap: 12px;
+  font-size: 0.72rem;
+  font-weight: 500;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  color: var(--cobalto);
+}
+
+.eyebrow::before {
+  content: "";
+  width: 28px;
+  height: 1px;
+  background: currentColor;
+}
+
+/* Foco visible consistente. */
+:focus-visible {
+  outline: 2px solid var(--cobalto);
+  outline-offset: 2px;
+}
+
+/* Print / "Descargar PDF": hide the site chrome (nav, back links, action
+   buttons) so only the quotation document prints, and keep brand colors. */
+@media print {
+  header,
+  .no-print {
+    display: none !important;
+  }
+  main {
+    max-width: none !important;
+    padding: 0 !important;
+  }
+  body {
+    background: #fff !important;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+}
