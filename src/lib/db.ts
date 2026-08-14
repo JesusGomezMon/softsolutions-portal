@@ -8,10 +8,16 @@ import path from "node:path";
 // node:sqlite ships with Node 22+ and needs no external download. See
 // docs/02-project-plan.md for the full note.
 
-// DATA_DIR is overridable via env so it can point at a mounted persistent
-// volume in production (e.g. Railway: set DATA_DIR=/data and attach a volume
-// there). Defaults to ./data for local development.
-const DATA_DIR = process.env.DATA_DIR || path.join(process.cwd(), "data");
+// During `next build`, page-data workers all import this module. Point each
+// worker at its own temp DB so they don't fight over a shared file (ERR
+// "database is locked"). Runtime uses DATA_DIR (Railway volume /data) or ./data.
+const isBuildTime =
+  process.env.NEXT_PHASE === "phase-production-build" ||
+  process.env.npm_lifecycle_event === "build";
+
+const DATA_DIR = isBuildTime
+  ? path.join(process.cwd(), ".next", "cache", `sqlite-build-${process.pid}`)
+  : process.env.DATA_DIR || path.join(process.cwd(), "data");
 const DB_PATH = path.join(DATA_DIR, "app.db");
 
 declare global {
@@ -26,6 +32,7 @@ function createConnection(): DatabaseSync {
   }
   const database = new DatabaseSync(DB_PATH);
   database.exec("PRAGMA foreign_keys = ON;");
+  database.exec("PRAGMA busy_timeout = 5000;");
   return database;
 }
 
