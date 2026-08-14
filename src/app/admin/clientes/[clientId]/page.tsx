@@ -59,6 +59,7 @@ export default async function ClientDetailPage({
     tier?: string;
     project_id?: string;
     invitado?: string;
+    mail?: string;
     accesoError?: string;
   }>;
 }) {
@@ -104,10 +105,12 @@ export default async function ClientDetailPage({
     const h = await headers();
     const base = clientBaseUrl(h.get("host"), h.get("x-forwarded-proto") ?? "http");
     const activationUrl = `${base}/activar?token=${token}`;
-    await sendInviteEmail({ to: email, clientName, activationUrl });
+    const mailed = await sendInviteEmail({ to: email, clientName, activationUrl });
 
     revalidatePath(path);
-    redirect(`${path}?invitado=${encodeURIComponent(email)}`);
+    redirect(
+      `${path}?invitado=${encodeURIComponent(email)}&mail=${mailed ? "1" : "0"}`
+    );
   }
 
   async function createProjectAction(formData: FormData) {
@@ -189,6 +192,7 @@ export default async function ClientDetailPage({
     }))
   );
   const invitedEmail = sp.invitado ? decodeURIComponent(sp.invitado) : null;
+  const mailSent = sp.mail === "1";
   const emailReady = isEmailConfigured();
   // Base del portal de cliente para reconstruir el link de activación de cada
   // invitación pendiente (para copiarlo/reenviarlo, aunque el correo no esté puesto).
@@ -237,9 +241,11 @@ export default async function ClientDetailPage({
               Invitación creada para {invitedEmail}
             </p>
             <p className="mt-1 text-xs text-emerald-700">
-              {emailReady
+              {mailSent
                 ? "Le enviamos un correo con el link para activar su cuenta y definir su contraseña."
-                : "El correo automático aún no está configurado — copia el link de activación de la lista de abajo y compártelo con el cliente."}
+                : emailReady
+                  ? "No se pudo enviar el correo. Copia el link de activación de abajo y compártelo con el cliente."
+                  : "Falta configurar RESEND_API_KEY. Copia el link de activación de abajo y compártelo, o agrega la clave de Resend en Vercel."}
             </p>
           </Card>
         )}

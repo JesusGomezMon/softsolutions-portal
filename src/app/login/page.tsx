@@ -83,12 +83,6 @@ export default async function LoginPage({
             Entrar
           </button>
         </form>
-
-        <div className="mt-6 border border-white/10 bg-white/5 p-4 text-xs text-[#a7b2ba]">
-          <p className="mb-1 font-semibold uppercase tracking-[0.1em] text-brand-steel">Cuentas de demostración</p>
-          <p>Admin: admin@softsolutions.mx / admin123</p>
-          <p>Cliente: cliente1@laespiga.mx / cliente123</p>
-        </div>
       </div>
     </main>
   );
